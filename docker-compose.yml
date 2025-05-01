@@ -11,15 +11,21 @@ services:
       - "5432:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "user"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
 
   app:
     build: .
     ports:
       - "8000:8000"
-    depends_on:
-      - db
     environment:
       DATABASE_URL: postgresql+asyncpg://user:password@db:5432/booksdb
+    depends_on:
+      db:
+        condition: service_healthy
 
 volumes:
   pgdata:

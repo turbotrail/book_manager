@@ -1,9 +1,10 @@
 # book_manager/app/main.py
 from fastapi import FastAPI
-from app.api.routes import books, reviews
+from app.api.routes import books, reviews , auth
 from app.core.config import settings
 from app.db.database import init_db
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.security import OAuth2PasswordBearer
 
 app = FastAPI(title="Intelligent Book Management System")
 
@@ -23,6 +24,7 @@ app.add_middleware(
 # Include Routers
 app.include_router(books.router, prefix="/books", tags=["Books"])
 app.include_router(reviews.router, prefix="/books", tags=["Reviews"])
+app.include_router(auth.router, prefix="/auth", tags=["Auth"])
 
 @app.get("/")
 def root():
