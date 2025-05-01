@@ -49,6 +49,7 @@ jobs:
     - name: Run tests with coverage
       env:
         DATABASE_URL: postgresql+asyncpg://user:password@localhost:5432/booksdb
+        PYTHONPATH: ${{ github.workspace }}
       run: |
         pytest --cov=app --cov-report=term --cov-report=xml
 
