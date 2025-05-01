@@ -1,5 +1,7 @@
 # 📚 Intelligent Book Management System
 
+[![codecov](https://codecov.io/gh/your-username/book_manager/branch/main/graph/badge.svg)](https://codecov.io/gh/your-username/book_manager)
+
 This project is an AI-enhanced book management system using FastAPI, PostgreSQL, and a locally running LLaMA3 model.
 
 ---
