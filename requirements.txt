@@ -13,3 +13,9 @@ python-dotenv
 pydantic-settings
 python-multipart
 pytest-cov
+langchain[all]
+langchain-community
+pymupdf
+langchain-ollama
+transformers
+tokenizers
