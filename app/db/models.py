@@ -20,8 +20,19 @@ class Review(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     book_id = Column(Integer, ForeignKey("books.id"))
-    user_id = Column(String)
+    user_id = Column(String, ForeignKey("users.username"))
     review_text = Column(String)
     rating = Column(Integer)
 
     book = relationship("Book", back_populates="reviews")
+
+class User(Base):
+    __tablename__ = "users"
+
+    id = Column(Integer, primary_key=True, index=True)
+    username = Column(String, unique=True, index=True, nullable=False)
+    password = Column(String, nullable=False)  # Store hashed
+    genre = Column(String, nullable=True)
+    author = Column(String, nullable=True)
+    min_year = Column(Integer, nullable=True)
+    max_year = Column(Integer, nullable=True)

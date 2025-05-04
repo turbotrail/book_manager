@@ -2,10 +2,9 @@
 from pydantic import BaseModel
 
 class ReviewIn(BaseModel):
-    user_id: str
     review_text: str
     rating: int
 
 class ReviewOut(ReviewIn):
-    id: int
+    user_id: str
     book_id: int

@@ -1,6 +1,6 @@
 # book_manager/app/main.py
 from fastapi import FastAPI
-from app.api.routes import books, reviews , auth
+from app.api.routes import books, reviews , auth , recommendations
 from app.core.config import settings
 from app.db.database import init_db
 from fastapi.middleware.cors import CORSMiddleware
@@ -25,6 +25,7 @@ app.add_middleware(
 app.include_router(books.router, prefix="/books", tags=["Books"])
 app.include_router(reviews.router, prefix="/books", tags=["Reviews"])
 app.include_router(auth.router, prefix="/auth", tags=["Auth"])
+app.include_router(recommendations.router, prefix="/recommendations", tags=["Recommendations"])
 
 @app.get("/")
 def root():

@@ -19,7 +19,8 @@ async def add_review(book_id: int, review: ReviewIn, db: AsyncSession = Depends(
     book = result.scalar_one_or_none()
     if not book:
         raise HTTPException(status_code=404, detail="Book not found")
-    new_review = models.Review(**review.dict(), book_id=book_id)
+    print(f"Adding review for book {book_id} by user {current_user}")
+    new_review = models.Review(**review.dict(), book_id=book_id, user_id=current_user)
     db.add(new_review)
     await db.commit()
     await db.refresh(new_review)

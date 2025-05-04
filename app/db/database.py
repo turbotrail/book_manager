@@ -21,3 +21,8 @@ async def init_db():
         except Exception as e:
             print(f"DB not ready yet ({i+1}/{retries}) — retrying...")
             await asyncio.sleep(3)
+from typing import AsyncGenerator
+
+async def get_db() -> AsyncGenerator[AsyncSession, None]:
+    async with SessionLocal() as session:
+        yield session
