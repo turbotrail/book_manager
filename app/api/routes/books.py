@@ -12,7 +12,9 @@ from langchain.document_loaders import PyMuPDFLoader
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain.chains.summarize import load_summarize_chain
 from langchain_ollama import ChatOllama
+from langchain.prompts import PromptTemplate
 import tempfile
+from anyio import to_thread
 
 router = APIRouter()
 
@@ -28,7 +30,7 @@ def choose_summary_chain(llm, docs):
     else:
         return load_summarize_chain(llm, chain_type="map_reduce")
 
-async def generate_and_update_summary(book_id: int, file_path: str, quick: bool, db: AsyncSession):
+async def generate_and_update_summary(book_id: int, file_path: str, quick: bool):
     loader = PyMuPDFLoader(file_path)
     pages = loader.load()
 
@@ -39,17 +41,28 @@ async def generate_and_update_summary(book_id: int, file_path: str, quick: bool,
     docs = splitter.split_documents(pages)
 
     llm = ChatOllama(model="llama3", base_url="http://host.docker.internal:11434")
-    chain = choose_summary_chain(llm, docs)
-    result = chain.invoke(docs)
-    summary = result["output_text"] if isinstance(result, dict) else result
 
-    result = await db.execute(select(models.Book).where(models.Book.id == book_id))
-    book = result.scalar_one_or_none()
-    if book:
-        book.summary = summary
-        db.add(book)
-        await db.commit()
-        await db.refresh(book)
+    prompt_template = PromptTemplate.from_template(
+        "You are an expert summarizer. Summarize the following book content clearly and concisely, preserving the main ideas, plot, or concepts. Highlight the core message and important takeaways.\n\n{text}"
+    )
+
+    chain = choose_summary_chain(llm, docs)
+    chain.llm_chain.prompt = prompt_template
+
+    def summarize_blocking():
+        res = chain.invoke(docs)
+        return res["output_text"] if isinstance(res, dict) else res
+
+    summary = await to_thread.run_sync(summarize_blocking)
+
+    async with SessionLocal() as db:
+        result = await db.execute(select(models.Book).where(models.Book.id == book_id))
+        book = result.scalar_one_or_none()
+        if book:
+            book.summary = summary
+            db.add(book)
+            await db.commit()
+            await db.refresh(book)
 
     os.remove(file_path)
 
@@ -81,7 +94,7 @@ async def add_book(
     await db.commit()
     await db.refresh(db_book)
 
-    background_tasks.add_task(generate_and_update_summary, db_book.id, tmp_path, quick, db)
+    background_tasks.add_task(generate_and_update_summary, db_book.id, tmp_path, quick)
 
     return db_book
 
