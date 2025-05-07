@@ -25,7 +25,7 @@ async def client(db_session):
     print("🧪 Starting LifespanManager")
     async with LifespanManager(app):
         print("✅ LifespanManager started")
-        async with AsyncClient(app=app, base_url="http://testserver") as ac:
+        async with AsyncClient(app=app, base_url="http://testserver") as ac: # pylint: disable=unexpected-keyword-arg
             print("✅ AsyncClient ready")
             yield ac
 
