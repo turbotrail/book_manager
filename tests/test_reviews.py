@@ -37,7 +37,7 @@ async def create_test_book(test_db: AsyncSession):
     return _create_book
 
 @pytest.mark.asyncio
-async def test_add_review_success(client, test_db, create_test_user, create_test_book):
+async def test_add_review_success(client: AsyncClient, test_db: AsyncSession, create_test_user, create_test_book):
     user = await create_test_user()
     book = await create_test_book()
     review_data = {"rating": 4, "comment": "Nice read."}
@@ -51,7 +51,7 @@ async def test_add_review_success(client, test_db, create_test_user, create_test
     assert data["user_id"] == user.id
 
 @pytest.mark.asyncio
-async def test_add_review_book_not_found(client, create_test_user):
+async def test_add_review_book_not_found(client: AsyncClient, create_test_user):
     user = await create_test_user()
     review_data = {"rating": 5, "comment": "Excellent!"}
 
@@ -60,7 +60,7 @@ async def test_add_review_book_not_found(client, create_test_user):
     assert response.json()["detail"] == "Book not found"
 
 @pytest.mark.asyncio
-async def test_get_reviews_success(client, test_db, create_test_user, create_test_book):
+async def test_get_reviews_success(client: AsyncClient, test_db: AsyncSession, create_test_user, create_test_book):
     user = await create_test_user()
     book = await create_test_book()
     review = models.Review(rating=5, comment="Loved it!", book_id=book.id, user_id=user.id)
@@ -74,7 +74,7 @@ async def test_get_reviews_success(client, test_db, create_test_user, create_tes
     assert reviews[0]["comment"] == "Loved it!"
 
 @pytest.mark.asyncio
-async def test_get_reviews_no_reviews(client, create_test_user, create_test_book):
+async def test_get_reviews_no_reviews(client: AsyncClient, create_test_user, create_test_book):
     user = await create_test_user()
     book = await create_test_book()
 
@@ -83,13 +83,13 @@ async def test_get_reviews_no_reviews(client, create_test_user, create_test_book
     assert response.json() == []
 
 @pytest.mark.asyncio
-async def test_add_review_unauthenticated(client, create_test_book):
+async def test_add_review_unauthenticated(client: AsyncClient, create_test_book):
     book = await create_test_book()
     response = await client.post(f"/{book.id}/reviews", json={"rating": 3, "comment": "Ok"})
     assert response.status_code == 401
 
 @pytest.mark.asyncio
-async def test_get_reviews_unauthenticated(client, create_test_book):
+async def test_get_reviews_unauthenticated(client: AsyncClient, create_test_book):
     book = await create_test_book()
     response = await client.get(f"/{book.id}/reviews")
     assert response.status_code == 401
