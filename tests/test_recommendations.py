@@ -33,8 +33,9 @@ async def client(test_db: AsyncSession):
 
 @pytest.fixture
 async def create_user(test_db: AsyncSession):
-    user = models.User(username="testuser", genre="Fantasy", author="Tolkien", min_year=1950, max_year=2000)
-    test_db.add(user)
+    async with test_db.begin():
+        user = models.User(username="testuser", genre="Fantasy", author="Tolkien", min_year=1950, max_year=2000)
+        test_db.add(user)
     await test_db.commit()
     return user
 
@@ -45,7 +46,8 @@ async def create_books(test_db: AsyncSession):
         models.Book(title="The Fellowship of the Ring", author="J.R.R. Tolkien", genre="Fantasy", year_published=1954, summary="The first part of the epic journey."),
         models.Book(title="1984", author="George Orwell", genre="Dystopian", year_published=1949, summary="A dystopian novel."),
     ]
-    test_db.add_all(books)
+    async with test_db.begin():
+        test_db.add_all(books)
     await test_db.commit()
     return books
 
@@ -117,8 +119,9 @@ async def test_save_preferences_overwrite(client: AsyncClient, create_user):
 @pytest.mark.asyncio
 async def test_save_preferences_create_new(client: AsyncClient, test_db):
     # Create a new user
-    new_user = models.User(username="newuser")
-    test_db.add(new_user)
+    async with test_db.begin():
+        new_user = models.User(username="newuser")
+        test_db.add(new_user)
     await test_db.commit()
 
     response = await client.post(

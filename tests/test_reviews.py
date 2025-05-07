@@ -1,22 +1,24 @@
-import pytest
+import pytest_asyncio
 from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.main import app
 from app.db import models
-from app.db.database import SessionLocal
+from app.db.database import override_get_db, get_db
 from fastapi import status
 
-@pytest.fixture
+@pytest_asyncio.fixture
 async def test_db():
-    async with SessionLocal() as session:
+    async with override_get_db() as session:
         yield session
 
-@pytest.fixture
+@pytest_asyncio.fixture
 async def client():
+    app.dependency_overrides[get_db] = override_get_db
     async with AsyncClient(app=app, base_url="http://test") as ac:
         yield ac
+    app.dependency_overrides.clear()
 
-@pytest.fixture
+@pytest_asyncio.fixture
 async def create_test_user(test_db: AsyncSession):
     async def _create_user(user_id: str = "testuser"):
         user = models.User(id=user_id, username=user_id)
@@ -26,7 +28,7 @@ async def create_test_user(test_db: AsyncSession):
         return user
     return _create_user
 
-@pytest.fixture
+@pytest_asyncio.fixture
 async def create_test_book(test_db: AsyncSession):
     async def _create_book(book_id: int = 1):
         book = models.Book(id=book_id, title="Sample", author="Author", genre="Fiction", year_published=2020, summary="Test Summary")
