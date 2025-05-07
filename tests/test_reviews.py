@@ -14,10 +14,12 @@ async def test_db():
 
 @pytest_asyncio.fixture
 async def client():
-    app.dependency_overrides[get_db] = override_get_db
-    async with AsyncClient(app=app, base_url="http://test") as ac:
-        yield ac
-    app.dependency_overrides.clear()
+    from asgi_lifespan import LifespanManager
+    import httpx
+
+    async with LifespanManager(app):
+        async with httpx.AsyncClient(base_url="http://test", transport=httpx.ASGITransport(app=app)) as ac:
+            yield ac
 
 @pytest_asyncio.fixture
 async def create_test_user(test_db: AsyncSession):

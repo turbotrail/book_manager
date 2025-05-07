@@ -1,21 +1,33 @@
 import pytest
-from httpx import AsyncClient
+from httpx import AsyncClient, ASGITransport
 from app.main import app
-from app.db.database import get_db, SessionLocal
+from app.db.database import get_db, Base
 from app.db.models import User
 from app.core.security import hash_password
-from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from sqlalchemy.future import select
+import asyncio
+
+TEST_DATABASE_URL = "postgresql+asyncpg://postgres:password@localhost/test_db"
+
+test_engine = create_async_engine(TEST_DATABASE_URL, echo=True)
+
+@pytest.fixture(scope="session", autouse=True)
+async def setup_test_database():
+    async with test_engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
 
 async def override_get_db():
-    async with SessionLocal() as session:
+    async_session = AsyncSession(bind=test_engine)
+    async with async_session as session:
         yield session
 
 app.dependency_overrides[get_db] = override_get_db
 
 @pytest.fixture
 async def db_session():
-    async with SessionLocal() as session:
+    async_session = AsyncSession(bind=test_engine)
+    async with async_session as session:
         yield session
 
 @pytest.fixture
@@ -25,9 +37,10 @@ async def test_user(db_session: AsyncSession):
     await db_session.commit()
     return user
 
-@pytest.mark.anyio
+@pytest.mark.anyio("asyncio")
 async def test_login_success(test_user):
-    async with AsyncClient(app=app, base_url="http://test") as client:
+    transport = ASGITransport(app=app, root_path="")
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
         response = await client.post(
             "/auth/token",
             data={"username": "admin", "password": "admin"},
@@ -37,9 +50,10 @@ async def test_login_success(test_user):
     assert "access_token" in response.json()
     assert response.json()["token_type"] == "bearer"
 
-@pytest.mark.anyio
+@pytest.mark.anyio("asyncio")
 async def test_login_invalid_username():
-    async with AsyncClient(app=app, base_url="http://test") as client:
+    transport = ASGITransport(app=app, root_path="")
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
         response = await client.post(
             "/auth/token",
             data={"username": "wrong", "password": "admin"},
@@ -48,9 +62,10 @@ async def test_login_invalid_username():
     assert response.status_code == 400
     assert response.json() == {"detail": "Invalid credentials"}
 
-@pytest.mark.anyio
+@pytest.mark.anyio("asyncio")
 async def test_login_invalid_password(test_user):
-    async with AsyncClient(app=app, base_url="http://test") as client:
+    transport = ASGITransport(app=app, root_path="")
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
         response = await client.post(
             "/auth/token",
             data={"username": "admin", "password": "wrongpass"},
@@ -59,9 +74,10 @@ async def test_login_invalid_password(test_user):
     assert response.status_code == 400
     assert response.json() == {"detail": "Invalid credentials"}
 
-@pytest.mark.anyio
+@pytest.mark.anyio("asyncio")
 async def test_register_success():
-    async with AsyncClient(app=app, base_url="http://test") as client:
+    transport = ASGITransport(app=app, root_path="")
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
         response = await client.post(
             "/auth/register",
             data={"username": "newuser", "password": "newpass"},
@@ -70,9 +86,10 @@ async def test_register_success():
     assert response.status_code == 200
     assert "User registered successfully" in response.json()["message"]
 
-@pytest.mark.anyio
+@pytest.mark.anyio("asyncio")
 async def test_register_existing_user(test_user):
-    async with AsyncClient(app=app, base_url="http://test") as client:
+    transport = ASGITransport(app=app, root_path="")
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
         response = await client.post(
             "/auth/register",
             data={"username": "admin", "password": "admin"},

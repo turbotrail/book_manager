@@ -1,6 +1,9 @@
 import pytest
 import pytest_asyncio
 from httpx import AsyncClient
+from fastapi import FastAPI
+from fastapi.testclient import TestClient
+from asgi_lifespan import LifespanManager
 from fastapi import status
 from app.main import app
 from app.db import models
@@ -15,8 +18,9 @@ async def test_db():
 
 @pytest_asyncio.fixture
 async def test_client():
-    async with AsyncClient(app=app, base_url="http://test") as client:
-        yield client
+    async with LifespanManager(app):
+        async with AsyncClient(base_url="http://test", transport=app) as client:
+            yield client
 
 @pytest_asyncio.fixture
 async def create_test_book(test_db: AsyncSession):
