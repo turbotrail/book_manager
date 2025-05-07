@@ -6,6 +6,7 @@ from app.db import models
 from app.schemas.book import BookOut
 from app.core.security import get_current_user
 import os
+from app.services.ai_summary import generate_summary
 
 # LangChain imports
 from langchain.document_loaders import PyMuPDFLoader

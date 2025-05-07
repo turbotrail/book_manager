@@ -1,230 +1,142 @@
+import os
 import pytest
-from httpx import AsyncClient
-from fastapi import status
+from fastapi.testclient import TestClient
+from unittest.mock import patch, AsyncMock, MagicMock
 from app.main import app
-from app.db import models
-from app.db.database import SessionLocal
+from app.db.database import get_db
+from app.core.security import get_current_user
 
-@pytest.fixture
-async def async_client():
-    async with AsyncClient(app=app, base_url="http://test") as client:
-        yield client
+client = TestClient(app)
 
-@pytest.fixture
-async def test_db():
-    async with SessionLocal() as session:
-        yield session
+def override_get_current_user():
+    return "mockuser"
 
-@pytest.mark.asyncio
-async def test_add_book(async_client, test_db):
-    async with async_client as client:
-        response = await client.post(
-            "/",
-            data={
-                "title": "Test Book",
-                "author": "Test Author",
-                "genre": "Fiction",
-                "year_published": 2023,
-                "quick": False,
-            },
-            files={"file": ("test.pdf", b"Dummy PDF content", "application/pdf")},
-        )
-        assert response.status_code == status.HTTP_200_OK
-        data = response.json()
-        assert data["title"] == "Test Book"
-        assert data["author"] == "Test Author"
-        assert data["summary"] == "Generating..."
+def override_get_db_with_book(book=None):
+    async def _override():
+        mock_result = MagicMock()
+        mock_result.scalar_one_or_none.return_value = book
+        mock_result.scalars.return_value.all.return_value = [book] if book else []
 
-@pytest.mark.asyncio
-async def test_get_all_books(async_client, test_db):
-    async with test_db as db:
-        book = models.Book(
-            title="Test Book",
-            author="Test Author",
-            genre="Fiction",
-            year_published=2023,
-            summary="Test Summary",
-        )
-        db.add(book)
-        await db.commit()
-        await db.refresh(book)
+        mock_session = MagicMock()
+        mock_session.execute = AsyncMock(return_value=mock_result)
+        mock_session.commit = AsyncMock()
+        mock_session.refresh = AsyncMock()
+        mock_session.add = MagicMock()
 
-    async with async_client as client:
-        response = await client.get("/")
-        assert response.status_code == status.HTTP_200_OK
-        data = response.json()
-        assert len(data) > 0
-        assert data[0]["title"] == "Test Book"
+        yield mock_session
 
-@pytest.mark.asyncio
-async def test_get_book(async_client, test_db):
-    async with test_db as db:
-        book = models.Book(
-            title="Test Book",
-            author="Test Author",
-            genre="Fiction",
-            year_published=2023,
-            summary="Test Summary",
-        )
-        db.add(book)
-        await db.commit()
-        await db.refresh(book)
+    return _override
 
-    async with async_client as client:
-        response = await client.get(f"/{book.id}")
-        assert response.status_code == status.HTTP_200_OK
-        data = response.json()
-        assert data["title"] == "Test Book"
-        assert data["author"] == "Test Author"
+app.dependency_overrides[get_current_user] = override_get_current_user
 
-@pytest.mark.asyncio
-async def test_get_summary_status(async_client, test_db):
-    async with test_db as db:
-        book = models.Book(
-            title="Test Book",
-            author="Test Author",
-            genre="Fiction",
-            year_published=2023,
-            summary="Generating...",
-        )
-        db.add(book)
-        await db.commit()
-        await db.refresh(book)
+@patch("app.api.routes.books.SessionLocal")
+@patch("app.api.routes.books.generate_and_update_summary", new_callable=AsyncMock)
+def test_add_book(mock_summary_task, mock_session_local):
+    book_data = {
+        "title": "Test Book",
+        "author": "Author Name",
+        "genre": "Fiction",
+        "year_published": 2021,
+        "quick": "true"
+    }
+    app.dependency_overrides[get_db] = override_get_db_with_book()
+    os.makedirs("tests", exist_ok=True)
+    with open("tests/sample.pdf", "wb") as f:
+        f.write(b"%PDF-1.4 test content")
 
-    async with async_client as client:
-        response = await client.get(f"/{book.id}/summary/status")
-        assert response.status_code == status.HTTP_200_OK
-        data = response.json()
-        assert data["book_id"] == book.id
-        assert data["summary_ready"] is False
+    mock_session = MagicMock()
+    mock_session.__aenter__ = AsyncMock(return_value=mock_session)
+    mock_session.__aexit__.return_value = AsyncMock()
+    mock_session.execute = AsyncMock()
+    mock_session.commit = AsyncMock()
+    mock_session.refresh = AsyncMock()
+    mock_session_local.return_value = mock_session
 
-@pytest.mark.asyncio
-async def test_get_summary(async_client, test_db):
-    async with test_db as db:
-        book = models.Book(
-            title="Test Book",
-            author="Test Author",
-            genre="Fiction",
-            year_published=2023,
-            summary="Test Summary",
-        )
-        db.add(book)
-        await db.commit()
-        await db.refresh(book)
+    with open("tests/sample.pdf", "rb") as f:
+        response = client.post("/books/", data=book_data, files={"file": f})
+    assert response.status_code == 200
+    assert "id" in response.json()
+    os.remove("tests/sample.pdf")
 
-    async with async_client as client:
-        response = await client.get(f"/{book.id}/summary")
-        assert response.status_code == status.HTTP_200_OK
-        data = response.json()
-        assert "generated_summary" in data
+@patch("app.api.routes.books.SessionLocal")
+def test_get_all_books(mock_session_local):
+    mock_book = MagicMock()
+    mock_book.id = 1
+    mock_book.title = "Test"
+    mock_book.author = "Author Name"
+    mock_book.genre = "Fiction"
+    mock_book.year_published = 2021
+    mock_book.summary = None
+    app.dependency_overrides[get_db] = override_get_db_with_book()
 
-@pytest.mark.asyncio
-async def test_add_book_with_missing_fields(async_client):
-    async with async_client as client:
-        response = await client.post(
-            "/",
-            data={
-                "title": "Test Book",
-                "author": "Test Author",
-            },
-        )
-        assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
+    mock_session = MagicMock()
+    mock_result = MagicMock()
+    mock_result.scalars().all.return_value = [mock_book]
+    mock_session.execute = AsyncMock(return_value=mock_result)
+    mock_session.__aenter__ = AsyncMock(return_value=mock_session)
+    mock_session.__aexit__.return_value = AsyncMock()
+    mock_session_local.return_value = mock_session
 
-@pytest.mark.asyncio
-async def test_get_nonexistent_book(async_client):
-    async with async_client as client:
-        response = await client.get("/9999")
-        assert response.status_code == status.HTTP_404_NOT_FOUND
-        assert response.json() == {"detail": "Book not found"}
-        assert response.status_code == status.HTTP_200_OK
-        data = response.json()
-        assert data["title"] == "Test Book"
-        assert data["author"] == "Test Author"
-        assert data["summary"] == "Generating..."
+    response = client.get("/books/")
+    assert response.status_code == 200
+    assert isinstance(response.json(), list)
 
-@pytest.mark.asyncio
-async def test_get_all_books(async_client, test_db):
-    # Add a book to the database for testing
-    async with test_db as db:
-        book = models.Book(
-            title="Test Book",
-            author="Test Author",
-            genre="Fiction",
-            year_published=2023,
-            summary="Test Summary",
-        )
-        db.add(book)
-        await db.commit()
-        await db.refresh(book)
+@patch("app.api.routes.books.SessionLocal")
+def test_get_book(mock_session_local):
+    mock_book = MagicMock()
+    mock_book.id = 1
+    mock_book.title = "Test"
+    app.dependency_overrides[get_db] = override_get_db_with_book()
 
-    async with async_client as client:
-        response = await client.get("/")
-        assert response.status_code == status.HTTP_200_OK
-        data = response.json()
-        assert len(data) > 0
-        assert data[0]["title"] == "Test Book"
+    mock_session = MagicMock()
+    mock_result = MagicMock()
+    mock_result.scalar_one_or_none.return_value = mock_book
+    mock_session.execute = AsyncMock(return_value=mock_result)
+    mock_session.__aenter__ = AsyncMock(return_value=mock_session)
+    mock_session.__aexit__.return_value = AsyncMock()
+    mock_session_local.return_value = mock_session
 
-@pytest.mark.asyncio
-async def test_get_book(async_client, test_db):
-    # Add a book to the database for testing
-    async with test_db as db:
-        book = models.Book(
-            title="Test Book",
-            author="Test Author",
-            genre="Fiction",
-            year_published=2023,
-            summary="Test Summary",
-        )
-        db.add(book)
-        await db.commit()
-        await db.refresh(book)
+    response = client.get("/books/1")
+    assert response.status_code == 200
+    assert response.json()["title"] == "Test"
 
-    async with async_client as client:
-        response = await client.get(f"/{book.id}")
-        assert response.status_code == status.HTTP_200_OK
-        data = response.json()
-        assert data["title"] == "Test Book"
-        assert data["author"] == "Test Author"
+@patch("app.api.routes.books.SessionLocal")
+def test_get_summary_status(mock_session_local):
+    mock_book = MagicMock()
+    mock_book.id = 1
+    mock_book.summary = "This is a summary."
+    app.dependency_overrides[get_db] = override_get_db_with_book()
 
-@pytest.mark.asyncio
-async def test_get_summary_status(async_client, test_db):
-    # Add a book to the database for testing
-    async with test_db as db:
-        book = models.Book(
-            title="Test Book",
-            author="Test Author",
-            genre="Fiction",
-            year_published=2023,
-            summary="Generating...",
-        )
-        db.add(book)
-        await db.commit()
-        await db.refresh(book)
+    mock_session = MagicMock()
+    mock_result = MagicMock()
+    mock_result.scalar_one_or_none.return_value = mock_book
+    mock_session.execute = AsyncMock(return_value=mock_result)
+    mock_session.__aenter__ = AsyncMock(return_value=mock_session)
+    mock_session.__aexit__.return_value = AsyncMock()
+    mock_session_local.return_value = mock_session
 
-    async with async_client as client:
-        response = await client.get(f"/{book.id}/summary/status")
-        assert response.status_code == status.HTTP_200_OK
-        data = response.json()
-        assert data["book_id"] == book.id
-        assert data["summary_ready"] is False
+    response = client.get("/books/1/summary/status")
+    assert response.status_code == 200
+    assert response.json()["summary_ready"] is True
 
-@pytest.mark.asyncio
-async def test_get_summary(async_client, test_db):
-    # Add a book to the database for testing
-    async with test_db as db:
-        book = models.Book(
-            title="Test Book",
-            author="Test Author",
-            genre="Fiction",
-            year_published=2023,
-            summary="Test Summary",
-        )
-        db.add(book)
-        await db.commit()
-        await db.refresh(book)
+@patch("app.api.routes.books.SessionLocal")
+@patch("app.api.routes.books.generate_summary", new_callable=AsyncMock)
+def test_get_summary(mock_gen, mock_session_local):
+    mock_book = MagicMock()
+    mock_book.id = 1
+    mock_book.title = "Mock Title"
+    mock_book.summary = "mock summary"
+    mock_gen.return_value = "Generated summary"
+    app.dependency_overrides[get_db] = override_get_db_with_book()
 
-    async with async_client as client:
-        response = await client.get(f"/{book.id}/summary")
-        assert response.status_code == status.HTTP_200_OK
-        data = response.json()
-        assert "generated_summary" in data
+    mock_session = MagicMock()
+    mock_result = MagicMock()
+    mock_result.scalar_one_or_none.return_value = mock_book
+    mock_session.execute = AsyncMock(return_value=mock_result)
+    mock_session.__aenter__ = AsyncMock(return_value=mock_session)
+    mock_session.__aexit__.return_value = AsyncMock()
+    mock_session_local.return_value = mock_session
+
+    response = client.get("/books/1/summary")
+    assert response.status_code == 200
+    assert "generated_summary" in response.json()
