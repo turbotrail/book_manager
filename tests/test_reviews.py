@@ -12,7 +12,7 @@ async def test_db():
 
 @pytest.fixture
 async def client():
-    async with AsyncClient(app=app, base_url="http://test") as ac:
+    async with AsyncClient(app=app, base_url="http://test") as ac: # pylint: disable=unexpected-keyword-arg
         yield ac
 
 @pytest.fixture

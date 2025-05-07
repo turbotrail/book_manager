@@ -29,7 +29,7 @@ async def client():
             yield session
 
     app.dependency_overrides[get_db] = override_get_db
-    async with AsyncClient(app=app, base_url="http://test") as ac:
+    async with AsyncClient(app=app, base_url="http://test") as ac: # pylint: disable=unexpected-keyword-arg
         yield ac
 
 @pytest.fixture

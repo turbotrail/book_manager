@@ -8,6 +8,7 @@ from langchain_ollama import ChatOllama
 from langchain.prompts import PromptTemplate
 from anyio import to_thread
 from app.api.dependencies import get_current_user
+from app.core.prompt_templates import RECOMMENDATION_PROMPT
 
 router = APIRouter()
 
@@ -71,14 +72,7 @@ async def get_recommendations(db: AsyncSession = Depends(get_db), current_user: 
         matched_books.sort(key=lambda x: x["rating"], reverse=True)
         # Prepare input for LLM to get a contextual recommendation message
         book_titles = ", ".join([book["title"] for book in matched_books])
-        prompt_template = PromptTemplate.from_template(
-            "You are an intelligent and friendly book recommender. A user has the following preferences:\n"
-            "- Genre: {genre}\n"
-            "- Favorite Author: {author}\n"
-            "- Preferred Year Range: {min_year} to {max_year}\n\n"
-            "Based on these preferences, you matched the following books from the library database: {book_titles}.\n\n"
-            "Write a friendly and insightful one-line recommendation summary that encourages the user to explore these books. Focus on variety, relevance, and appeal."
-        )
+        prompt_template = RECOMMENDATION_PROMPT
         llm = ChatOllama(model="llama3", temperature=0.7, base_url="http://host.docker.internal:11434")
         llm_prompt = prompt_template.format(
             genre=pref.genre or "Any",

@@ -6,13 +6,14 @@ from app.db import models
 from app.schemas.book import BookOut
 from app.core.security import get_current_user
 import os
+from app.services.ai_summary import generate_summary
 
 # LangChain imports
 from langchain.document_loaders import PyMuPDFLoader
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain.chains.summarize import load_summarize_chain
 from langchain_ollama import ChatOllama
-from langchain.prompts import PromptTemplate
+from app.core.prompt_templates import SUMMARY_PROMPT_TEMPLATE
 import tempfile
 from anyio import to_thread
 
@@ -42,9 +43,7 @@ async def generate_and_update_summary(book_id: int, file_path: str, quick: bool)
 
     llm = ChatOllama(model="llama3", base_url="http://host.docker.internal:11434")
 
-    prompt_template = PromptTemplate.from_template(
-        "You are an expert summarizer. Summarize the following book content clearly and concisely, preserving the main ideas, plot, or concepts. Highlight the core message and important takeaways.\n\n{text}"
-    )
+    prompt_template = SUMMARY_PROMPT_TEMPLATE
 
     chain = choose_summary_chain(llm, docs)
     chain.llm_chain.prompt = prompt_template
