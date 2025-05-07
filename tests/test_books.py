@@ -2,7 +2,7 @@ import pytest
 import pytest_asyncio
 from httpx import AsyncClient
 from fastapi import FastAPI
-from fastapi.testclient import TestClient
+from httpx import ASGITransport
 from asgi_lifespan import LifespanManager
 from fastapi import status
 from app.main import app
@@ -19,7 +19,8 @@ async def test_db():
 @pytest_asyncio.fixture
 async def test_client():
     async with LifespanManager(app):
-        async with AsyncClient(base_url="http://test", transport=app) as client:
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
             yield client
 
 @pytest_asyncio.fixture

@@ -2,58 +2,39 @@ import pytest
 from httpx import AsyncClient
 from fastapi.testclient import TestClient
 from app.main import app
-from app.db.database import get_db
+from app.db.database import get_db, engine, SessionLocal as TestingSessionLocal
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker
 from app.db import models
 
-# Mock database setup
-DATABASE_URL = "sqlite+aiosqlite:///:memory:"
-engine = create_async_engine(DATABASE_URL, echo=True)
-TestingSessionLocal = async_sessionmaker(
-    autocommit=False, autoflush=False, bind=engine
-)
-
 @pytest.fixture(scope="module")
-async def test_db():
-    async with engine.begin() as conn:
-        await conn.run_sync(models.Base.metadata.create_all)
-    async with TestingSessionLocal() as session:
-        yield session
-    await engine.dispose()
-
-@pytest.fixture(scope="module")
-async def client(test_db: AsyncSession):
-    def override_get_db():
-        async def gen():
-            yield test_db
-        return gen()
-
-    app.dependency_overrides[get_db] = override_get_db
+async def client():
+    app.dependency_overrides[get_db] = get_db
     from httpx import ASGITransport
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as ac:
         yield ac
 
 @pytest.fixture
-async def create_user(test_db: AsyncSession):
-    async with test_db.begin():
-        user = models.User(username="testuser", genre="Fantasy", author="Tolkien", min_year=1950, max_year=2000)
-        test_db.add(user)
-    await test_db.commit()
-    return user
+async def create_user():
+    async with get_db() as session:
+        async with session.begin():
+            user = models.User(username="testuser", genre="Fantasy", author="Tolkien", min_year=1950, max_year=2000)
+            session.add(user)
+        await session.commit()
+        return user
 
 @pytest.fixture
-async def create_books(test_db: AsyncSession):
+async def create_books():
     books = [
         models.Book(title="The Hobbit", author="J.R.R. Tolkien", genre="Fantasy", year_published=1937, summary="A hobbit's adventure."),
         models.Book(title="The Fellowship of the Ring", author="J.R.R. Tolkien", genre="Fantasy", year_published=1954, summary="The first part of the epic journey."),
         models.Book(title="1984", author="George Orwell", genre="Dystopian", year_published=1949, summary="A dystopian novel."),
     ]
-    async with test_db.begin():
-        test_db.add_all(books)
-    await test_db.commit()
-    return books
+    async with get_db() as session:
+        async with session.begin():
+            session.add_all(books)
+        await session.commit()
+        return books
 
 @pytest.mark.asyncio
 async def test_save_preferences(client: AsyncClient):
@@ -86,10 +67,10 @@ async def test_get_recommendations_with_matches(client: AsyncClient, create_user
     assert any(book["title"] == "The Fellowship of the Ring" for book in data["books"])
 
 @pytest.mark.asyncio
-async def test_get_recommendations_no_matches(client: AsyncClient, create_user, test_db):
-    # Clear books to ensure no matches
-    await test_db.execute("DELETE FROM books")
-    await test_db.commit()
+async def test_get_recommendations_no_matches(client: AsyncClient, create_user):
+    async with get_db() as db:
+        await db.execute("DELETE FROM books")
+        await db.commit()
 
     response = await client.get("/recommendations", headers={"Authorization": "Bearer testuser"})
     assert response.status_code == 200
@@ -121,12 +102,12 @@ async def test_save_preferences_overwrite(client: AsyncClient, create_user):
 
 
 @pytest.mark.asyncio
-async def test_save_preferences_create_new(client: AsyncClient, test_db):
-    # Create a new user
-    async with test_db.begin():
-        new_user = models.User(username="newuser")
-        test_db.add(new_user)
-    await test_db.commit()
+async def test_save_preferences_create_new(client: AsyncClient):
+    async with get_db() as session:
+        async with session.begin():
+            new_user = models.User(username="newuser")
+            session.add(new_user)
+        await session.commit()
 
     response = await client.post(
         "/preferences",
@@ -167,10 +148,10 @@ async def test_get_recommendations_with_partial_preferences(client: AsyncClient,
 
 
 @pytest.mark.asyncio
-async def test_get_recommendations_with_no_books(client: AsyncClient, create_user, test_db):
-    # Clear all books from the database
-    await test_db.execute("DELETE FROM books")
-    await test_db.commit()
+async def test_get_recommendations_with_no_books(client: AsyncClient, create_user):
+    async with get_db() as db:
+        await db.execute("DELETE FROM books")
+        await db.commit()
 
     response = await client.get("/recommendations", headers={"Authorization": "Bearer testuser"})
     assert response.status_code == 200

@@ -21,3 +21,4 @@ transformers
 tokenizers
 pytest-mock
 aiosqlite
+asgi_lifespan

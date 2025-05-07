@@ -4,30 +4,30 @@ from app.main import app
 from app.db.database import get_db, Base
 from app.db.models import User
 from app.core.security import hash_password
-from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
+from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine, async_sessionmaker
 from sqlalchemy.future import select
 import asyncio
 
 TEST_DATABASE_URL = "postgresql+asyncpg://postgres:password@localhost/test_db"
 
 test_engine = create_async_engine(TEST_DATABASE_URL, echo=True)
+TestSessionLocal = async_sessionmaker(test_engine, expire_on_commit=False)
 
 @pytest.fixture(scope="session", autouse=True)
 async def setup_test_database():
     async with test_engine.begin() as conn:
+        await conn.run_sync(Base.metadata.drop_all)
         await conn.run_sync(Base.metadata.create_all)
+    # Apply dependency override after DB is ready
+    app.dependency_overrides[get_db] = override_get_db
 
 async def override_get_db():
-    async_session = AsyncSession(bind=test_engine)
-    async with async_session as session:
+    async with TestSessionLocal() as session:
         yield session
-
-app.dependency_overrides[get_db] = override_get_db
 
 @pytest.fixture
 async def db_session():
-    async_session = AsyncSession(bind=test_engine)
-    async with async_session as session:
+    async with TestSessionLocal() as session:
         yield session
 
 @pytest.fixture

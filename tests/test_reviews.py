@@ -4,13 +4,8 @@ from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.main import app
 from app.db import models
-from app.db.database import override_get_db, get_db
+from app.db.database import get_db
 from fastapi import status
-
-@pytest_asyncio.fixture
-async def test_db():
-    async with override_get_db() as session:
-        yield session
 
 @pytest_asyncio.fixture
 async def client():
@@ -22,27 +17,29 @@ async def client():
             yield ac
 
 @pytest_asyncio.fixture
-async def create_test_user(test_db: AsyncSession):
+async def create_test_user():
     async def _create_user(user_id: str = "testuser"):
+        db = await anext(get_db())
         user = models.User(id=user_id, username=user_id)
-        test_db.add(user)
-        await test_db.commit()
-        await test_db.refresh(user)
+        db.add(user)
+        await db.commit()
+        await db.refresh(user)
         return user
     return _create_user
 
 @pytest_asyncio.fixture
-async def create_test_book(test_db: AsyncSession):
+async def create_test_book():
     async def _create_book(book_id: int = 1):
+        db = await anext(get_db())
         book = models.Book(id=book_id, title="Sample", author="Author", genre="Fiction", year_published=2020, summary="Test Summary")
-        test_db.add(book)
-        await test_db.commit()
-        await test_db.refresh(book)
+        db.add(book)
+        await db.commit()
+        await db.refresh(book)
         return book
     return _create_book
 
 @pytest.mark.asyncio
-async def test_add_review_success(client: AsyncClient, test_db: AsyncSession, create_test_user, create_test_book):
+async def test_add_review_success(client: AsyncClient, create_test_user, create_test_book):
     user = await create_test_user()
     book = await create_test_book()
     review_data = {"rating": 4, "comment": "Nice read."}
@@ -65,12 +62,13 @@ async def test_add_review_book_not_found(client: AsyncClient, create_test_user):
     assert response.json()["detail"] == "Book not found"
 
 @pytest.mark.asyncio
-async def test_get_reviews_success(client: AsyncClient, test_db: AsyncSession, create_test_user, create_test_book):
+async def test_get_reviews_success(client: AsyncClient, create_test_user, create_test_book):
     user = await create_test_user()
     book = await create_test_book()
     review = models.Review(rating=5, comment="Loved it!", book_id=book.id, user_id=user.id)
-    test_db.add(review)
-    await test_db.commit()
+    db = await anext(get_db())
+    db.add(review)
+    await db.commit()
 
     response = await client.get(f"/{book.id}/reviews", headers={"Authorization": f"Bearer {user.username}"})
     assert response.status_code == 200
