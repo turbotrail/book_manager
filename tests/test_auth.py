@@ -1,35 +1,71 @@
 import pytest
-from fastapi.testclient import TestClient
-from app.api.routes.auth import router
-from app.core.security import create_access_token
+from httpx import AsyncClient
+from app.main import app
+from app.db.database import get_db, override_get_db
+from app.db.models import User
+from app.core.security import hash_password
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.future import select
 
-# Mock the create_access_token function
 @pytest.fixture
-def mock_create_access_token(monkeypatch):
-    def mock_token(data):
-        return "mocked_access_token"
-    monkeypatch.setattr("app.core.security.create_access_token", mock_token)
+async def test_user(db_session: AsyncSession):
+    user = User(username="admin", password=hash_password("admin"))
+    db_session.add(user)
+    await db_session.commit()
+    return user
 
-# Create a TestClient for the router
-client = TestClient(router)
-
-def test_login_success(mock_create_access_token):
-    response = client.post(
-        "/token",
-        data={"username": "admin", "password": "admin"},
-        headers={"Content-Type": "application/x-www-form-urlencoded"}
-    )
+@pytest.mark.anyio
+async def test_login_success(test_user):
+    async with AsyncClient(app=app, base_url="http://test") as client:
+        response = await client.post(
+            "/auth/token",
+            data={"username": "admin", "password": "admin"},
+            headers={"Content-Type": "application/x-www-form-urlencoded"}
+        )
     assert response.status_code == 200
-    assert response.json() == {
-        "access_token": "mocked_access_token",
-        "token_type": "bearer"
-    }
+    assert "access_token" in response.json()
+    assert response.json()["token_type"] == "bearer"
 
-def test_login_invalid_credentials():
-    response = client.post(
-        "/token",
-        data={"username": "wrong", "password": "credentials"},
-        headers={"Content-Type": "application/x-www-form-urlencoded"}
-    )
+@pytest.mark.anyio
+async def test_login_invalid_username():
+    async with AsyncClient(app=app, base_url="http://test") as client:
+        response = await client.post(
+            "/auth/token",
+            data={"username": "wrong", "password": "admin"},
+            headers={"Content-Type": "application/x-www-form-urlencoded"}
+        )
     assert response.status_code == 400
     assert response.json() == {"detail": "Invalid credentials"}
+
+@pytest.mark.anyio
+async def test_login_invalid_password(test_user):
+    async with AsyncClient(app=app, base_url="http://test") as client:
+        response = await client.post(
+            "/auth/token",
+            data={"username": "admin", "password": "wrongpass"},
+            headers={"Content-Type": "application/x-www-form-urlencoded"}
+        )
+    assert response.status_code == 400
+    assert response.json() == {"detail": "Invalid credentials"}
+
+@pytest.mark.anyio
+async def test_register_success():
+    async with AsyncClient(app=app, base_url="http://test") as client:
+        response = await client.post(
+            "/auth/register",
+            data={"username": "newuser", "password": "newpass"},
+            headers={"Content-Type": "application/x-www-form-urlencoded"}
+        )
+    assert response.status_code == 200
+    assert "User registered successfully" in response.json()["message"]
+
+@pytest.mark.anyio
+async def test_register_existing_user(test_user):
+    async with AsyncClient(app=app, base_url="http://test") as client:
+        response = await client.post(
+            "/auth/register",
+            data={"username": "admin", "password": "admin"},
+            headers={"Content-Type": "application/x-www-form-urlencoded"}
+        )
+    assert response.status_code == 400
+    assert response.json() == {"detail": "Username already taken"}

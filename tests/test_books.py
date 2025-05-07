@@ -182,3 +182,38 @@ async def test_get_summary(test_client, create_test_book, mocker):
         mock_generate_summary.assert_called_once_with(
             f"Summarize the following book content:\n\nTitle: {book.title}\n\nSummary: {book.summary}"
         )
+
+import pytest
+from fastapi import status
+
+from unittest.mock import AsyncMock
+
+@pytest.mark.asyncio
+async def test_get_summary_status_ready(test_client, create_test_book):
+    book = await create_test_book("Summary Ready Book", "Author", "Genre", 2022, "This is a summary.")
+    response = await test_client.get(f"/{book.id}/summary/status", headers={"Authorization": "Bearer test_token"})
+    assert response.status_code == status.HTTP_200_OK
+    assert response.json()["summary_ready"] is True
+
+@pytest.mark.asyncio
+async def test_get_summary_status_generating(test_client, create_test_book):
+    book = await create_test_book("Summary Generating Book", "Author", "Genre", 2022, "Generating...")
+    response = await test_client.get(f"/{book.id}/summary/status", headers={"Authorization": "Bearer test_token"})
+    assert response.status_code == status.HTTP_200_OK
+    assert response.json()["summary_ready"] is False
+
+@pytest.mark.asyncio
+async def test_get_summary_not_found(test_client):
+    response = await test_client.get("/999/summary", headers={"Authorization": "Bearer test_token"})
+    assert response.status_code == status.HTTP_404_NOT_FOUND
+
+@pytest.mark.asyncio
+async def test_get_summary_with_ai(test_client, create_test_book, mocker):
+    book = await create_test_book("AI Summary Book", "Author", "Genre", 2022, "Some book content.")
+    mock_generate_summary = mocker.patch(
+        "app.api.routes.books.generate_summary", new_callable=AsyncMock, return_value="AI Generated Summary"
+    )
+    response = await test_client.get(f"/{book.id}/summary", headers={"Authorization": "Bearer test_token"})
+    assert response.status_code == status.HTTP_200_OK
+    assert response.json()["generated_summary"] == "AI Generated Summary"
+    mock_generate_summary.assert_awaited_once()
