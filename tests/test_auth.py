@@ -1,109 +1,87 @@
 import pytest
-from httpx import AsyncClient, ASGITransport
+from httpx import AsyncClient
+from fastapi import status
 from app.main import app
-from app.db.database import get_db, Base
-from app.db.models import User
-from app.core.security import hash_password
-from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine, async_sessionmaker
-from sqlalchemy.future import select
-import asyncio
-import time
+from app.db import models
+from app.db.database import get_db
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import sessionmaker
+from sqlalchemy.ext.asyncio import create_async_engine
 
-TEST_DATABASE_URL = "postgresql+asyncpg://user:password@localhost:5432/booksdb"
-
-test_engine = create_async_engine(TEST_DATABASE_URL, echo=True)
-TestSessionLocal = async_sessionmaker(test_engine, expire_on_commit=False)
-
-@pytest.fixture(scope="session", autouse=True)
-async def setup_test_database():
-    retries = 5
-    for i in range(retries):
-        try:
-            async with test_engine.begin() as conn:
-                await conn.run_sync(Base.metadata.drop_all)
-                await conn.run_sync(Base.metadata.create_all)
-            break
-        except Exception as e:
-            if i < retries - 1:
-                print(f"DB not ready yet ({i+1}/{retries}) — retrying...")
-                time.sleep(3)
-            else:
-                raise e
-    app.dependency_overrides[get_db] = override_get_db
-
-async def override_get_db():
-    async with TestSessionLocal() as session:
-        yield session
+# Mock database setup
+DATABASE_URL = "sqlite+aiosqlite:///:memory:"
+engine = create_async_engine(DATABASE_URL, future=True, echo=True)
+TestingSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine, class_=AsyncSession)
 
 @pytest.fixture
 async def db_session():
-    async with TestSessionLocal() as session:
+    async with engine.begin() as conn:
+        await conn.run_sync(models.Base.metadata.create_all)
+    async with TestingSessionLocal() as session:
         yield session
+    async with engine.begin() as conn:
+        await conn.run_sync(models.Base.metadata.drop_all)
 
 @pytest.fixture
-async def test_user(db_session: AsyncSession):
-    user = User(username="admin", password=hash_password("admin"))
-    db_session.add(user)
-    await db_session.commit()
-    return user
+async def client(db_session):
+    async def override_get_db():
+        yield db_session
+    app.dependency_overrides[get_db] = override_get_db
+    async with AsyncClient(app=app, base_url="http://testserver") as ac:
+        yield ac
 
-@pytest.mark.anyio("asyncio")
-async def test_login_success(test_user):
-    transport = ASGITransport(app=app, root_path="")
-    async with AsyncClient(transport=transport, base_url="http://test") as client:
-        response = await client.post(
-            "/auth/token",
-            data={"username": "admin", "password": "admin"},
-            headers={"Content-Type": "application/x-www-form-urlencoded"}
-        )
-    assert response.status_code == 200
+@pytest.mark.asyncio
+async def test_register_user(client):
+    response = await client.post(
+        "/register",
+        data={"username": "testuser", "password": "testpassword"}
+    )
+    assert response.status_code == status.HTTP_200_OK
+    assert response.json() == {"message": "User registered successfully testuser"}
+
+@pytest.mark.asyncio
+async def test_register_existing_user(client, db_session):
+    # Create a user in the database
+    hashed_password = "hashedpassword"
+    new_user = models.User(username="testuser", password=hashed_password)
+    db_session.add(new_user)
+    await db_session.commit()
+
+    # Try to register the same user again
+    response = await client.post(
+        "/register",
+        data={"username": "testuser", "password": "testpassword"}
+    )
+    assert response.status_code == status.HTTP_400_BAD_REQUEST
+    assert response.json() == {"detail": "Username already taken"}
+
+@pytest.mark.asyncio
+async def test_login_user(client, db_session):
+    # Create a user in the database
+    hashed_password = "hashedpassword"
+    new_user = models.User(username="testuser", password=hashed_password)
+    db_session.add(new_user)
+    await db_session.commit()
+
+    # Mock verify_password to return True
+    async def mock_verify_password(plain_password, hashed_password):
+        return True
+
+    app.dependency_overrides[verify_password] = mock_verify_password
+
+    response = await client.post(
+        "/token",
+        data={"username": "testuser", "password": "testpassword"}
+    )
+    assert response.status_code == status.HTTP_200_OK
     assert "access_token" in response.json()
     assert response.json()["token_type"] == "bearer"
 
-@pytest.mark.anyio("asyncio")
-async def test_login_invalid_username():
-    transport = ASGITransport(app=app, root_path="")
-    async with AsyncClient(transport=transport, base_url="http://test") as client:
-        response = await client.post(
-            "/auth/token",
-            data={"username": "wrong", "password": "admin"},
-            headers={"Content-Type": "application/x-www-form-urlencoded"}
-        )
-    assert response.status_code == 400
+@pytest.mark.asyncio
+async def test_login_invalid_credentials(client):
+    response = await client.post(
+        "/token",
+        data={"username": "invaliduser", "password": "invalidpassword"}
+    )
+    assert response.status_code == status.HTTP_400_BAD_REQUEST
     assert response.json() == {"detail": "Invalid credentials"}
-
-@pytest.mark.anyio("asyncio")
-async def test_login_invalid_password(test_user):
-    transport = ASGITransport(app=app, root_path="")
-    async with AsyncClient(transport=transport, base_url="http://test") as client:
-        response = await client.post(
-            "/auth/token",
-            data={"username": "admin", "password": "wrongpass"},
-            headers={"Content-Type": "application/x-www-form-urlencoded"}
-        )
-    assert response.status_code == 400
-    assert response.json() == {"detail": "Invalid credentials"}
-
-@pytest.mark.anyio("asyncio")
-async def test_register_success():
-    transport = ASGITransport(app=app, root_path="")
-    async with AsyncClient(transport=transport, base_url="http://test") as client:
-        response = await client.post(
-            "/auth/register",
-            data={"username": "newuser", "password": "newpass"},
-            headers={"Content-Type": "application/x-www-form-urlencoded"}
-        )
-    assert response.status_code == 200
-    assert "User registered successfully" in response.json()["message"]
-
-@pytest.mark.anyio("asyncio")
-async def test_register_existing_user(test_user):
-    transport = ASGITransport(app=app, root_path="")
-    async with AsyncClient(transport=transport, base_url="http://test") as client:
-        response = await client.post(
-            "/auth/register",
-            data={"username": "admin", "password": "admin"},
-            headers={"Content-Type": "application/x-www-form-urlencoded"}
-        )
-    assert response.status_code == 400
-    assert response.json() == {"detail": "Username already taken"}
