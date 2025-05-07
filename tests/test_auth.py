@@ -25,7 +25,85 @@ async def db_session():
 @pytest.fixture
 async def client(db_session):
     async def override_get_db():
-        yield db_session
+        async for session in db_session:
+            yield session
+    app.dependency_overrides[get_db] = override_get_db
+    async with AsyncClient(app=app, base_url="http://testserver") as ac:
+        yield ac
+
+@pytest.mark.asyncio
+async def test_register_user(client):
+    async with client as ac:
+        response = await ac.post(
+            "/register",
+            data={"username": "testuser", "password": "testpassword"}
+        )
+        assert response.status_code == status.HTTP_200_OK
+        assert response.json() == {"message": "User registered successfully testuser"}
+
+@pytest.mark.asyncio
+async def test_register_existing_user(client, db_session):
+    async with db_session as session:
+        hashed_password = "hashedpassword"
+        new_user = models.User(username="testuser", password=hashed_password)
+        session.add(new_user)
+        await session.commit()
+
+    async with client as ac:
+        response = await ac.post(
+            "/register",
+            data={"username": "testuser", "password": "testpassword"}
+        )
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+        assert response.json() == {"detail": "Username already taken"}
+
+@pytest.mark.asyncio
+async def test_login_user(client, db_session):
+    async with db_session as session:
+        hashed_password = "hashedpassword"
+        new_user = models.User(username="testuser", password=hashed_password)
+        session.add(new_user)
+        await session.commit()
+
+    async def mock_verify_password(plain_password, hashed_password):
+        return True
+
+    app.dependency_overrides[verify_password] = mock_verify_password
+
+    async with client as ac:
+        response = await ac.post(
+            "/token",
+            data={"username": "testuser", "password": "testpassword"}
+        )
+        assert response.status_code == status.HTTP_200_OK
+        assert "access_token" in response.json()
+        assert response.json()["token_type"] == "bearer"
+
+@pytest.mark.asyncio
+async def test_login_invalid_credentials(client):
+    async with client as ac:
+        response = await ac.post(
+            "/token",
+            data={"username": "invaliduser", "password": "invalidpassword"}
+        )
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+        assert response.json() == {"detail": "Invalid credentials"}
+
+@pytest.mark.asyncio
+async def test_register_user_with_empty_password(client):
+    response = await client.post(
+        "/register",
+        data={"username": "testuser2", "password": ""}
+    )
+    assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
+
+@pytest.mark.asyncio
+async def test_login_user_with_empty_username(client):
+    response = await client.post(
+        "/token",
+        data={"username": "", "password": "testpassword"}
+    )
+    assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
     app.dependency_overrides[get_db] = override_get_db
     async with AsyncClient(app=app, base_url="http://testserver") as ac:
         yield ac

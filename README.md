@@ -2,6 +2,8 @@
 
 [![Run FastAPI Route Tests](https://github.com/turbotrail/book_manager/actions/workflows/unit_test.yaml/badge.svg)](https://github.com/turbotrail/book_manager/actions/workflows/unit_test.yaml)
 
+[![Build and Check Docker Compose](https://github.com/turbotrail/book_manager/actions/workflows/build.yaml/badge.svg)](https://github.com/turbotrail/book_manager/actions/workflows/build.yaml)
+
 This is an AI-powered book management system built with FastAPI, PostgreSQL, and LLaMA3 for generating summaries and personalized book recommendations. It supports core features like user authentication, book and review management, background AI summarization, and recommendation using user preferences.
 
 ---

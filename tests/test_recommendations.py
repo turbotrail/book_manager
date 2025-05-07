@@ -43,21 +43,23 @@ async def create_user(client):
 
 @pytest.mark.asyncio
 async def test_save_preferences(client):
-    payload = {
-        "genre": "Science Fiction",
-        "author": "Isaac Asimov",
-        "min_year": 1950,
-        "max_year": 2000
-    }
-    response = await client.post("/preferences", json=payload)
-    assert response.status_code == status.HTTP_200_OK
-    assert response.json() == {"message": "Preferences saved successfully"}
+    async with client as ac:
+        payload = {
+            "genre": "Science Fiction",
+            "author": "Isaac Asimov",
+            "min_year": 1950,
+            "max_year": 2000
+        }
+        response = await ac.post("/preferences", json=payload)
+        assert response.status_code == status.HTTP_200_OK
+        assert response.json() == {"message": "Preferences saved successfully"}
 
 @pytest.mark.asyncio
 async def test_get_recommendations_no_preferences(client):
-    response = await client.get("/recommendations")
-    assert response.status_code == status.HTTP_404_NOT_FOUND
-    assert response.json() == {"detail": "No preferences found for user"}
+    async with client as ac:
+        response = await ac.get("/recommendations")
+        assert response.status_code == status.HTTP_404_NOT_FOUND
+        assert response.json() == {"detail": "No preferences found for user"}
 
 @pytest.mark.asyncio
 async def test_get_recommendations_with_preferences(client, create_user):
@@ -89,8 +91,9 @@ async def test_get_recommendations_with_preferences(client, create_user):
         db.add_all(books)
         await db.commit()
 
-    response = await client.get("/recommendations")
-    assert response.status_code == status.HTTP_200_OK
-    data = response.json()
-    assert "recommendation_summary" in data
-    assert len(data["books"]) > 0
+    async with client as ac:
+        response = await ac.get("/recommendations")
+        assert response.status_code == status.HTTP_200_OK
+        data = response.json()
+        assert "recommendation_summary" in data
+        assert len(data["books"]) > 0
