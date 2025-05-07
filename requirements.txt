@@ -19,3 +19,4 @@ pymupdf
 langchain-ollama
 transformers
 tokenizers
+pytest-mock

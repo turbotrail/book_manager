@@ -85,3 +85,25 @@ async def test_get_reviews_no_reviews(client: AsyncClient, create_test_book):
     assert response.status_code == 200
     response_data = response.json()
     assert response_data == []
+    @pytest.mark.asyncio
+    async def test_add_review_unauthenticated(client: AsyncClient, create_test_book):
+        # Arrange
+        await create_test_book(book_id=1)
+        review_data = {"rating": 5, "comment": "Great book!"}
+
+        # Act
+        response = await client.post(f"/1/reviews", json=review_data)
+
+        # Assert
+        assert response.status_code == 401  # Unauthorized
+
+    @pytest.mark.asyncio
+    async def test_get_reviews_unauthenticated(client: AsyncClient, create_test_book):
+        # Arrange
+        await create_test_book(book_id=1)
+
+        # Act
+        response = await client.get(f"/1/reviews")
+
+        # Assert
+        assert response.status_code == 401  # Unauthorized
