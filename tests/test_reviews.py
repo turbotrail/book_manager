@@ -11,8 +11,21 @@ from fastapi import status
 async def client():
     from asgi_lifespan import LifespanManager
     import httpx
+    import asyncio
+    from sqlalchemy import text
+    from app.db.database import SessionLocal
 
     async with LifespanManager(app):
+        # Wait for the DB to be ready
+        for i in range(5):
+            try:
+                async with SessionLocal() as session:
+                    await session.execute(text("SELECT 1"))
+                break
+            except Exception:
+                print(f"DB not ready yet ({i+1}/5) — retrying...")
+                await asyncio.sleep(3)
+
         async with httpx.AsyncClient(base_url="http://test", transport=httpx.ASGITransport(app=app)) as ac:
             yield ac
 

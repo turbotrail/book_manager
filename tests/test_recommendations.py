@@ -8,6 +8,21 @@ from app.db import models
 
 @pytest.fixture(scope="module")
 async def client():
+    import time
+    from sqlalchemy.exc import OperationalError
+    max_attempts = 5
+    for attempt in range(max_attempts):
+        try:
+            async with get_db() as db:
+                await db.execute("SELECT 1")
+            break
+        except OperationalError:
+            if attempt < max_attempts - 1:
+                print(f"DB not ready yet ({attempt + 1}/{max_attempts}) — retrying...")
+                time.sleep(3)
+            else:
+                raise
+
     app.dependency_overrides[get_db] = get_db
     from httpx import ASGITransport
     transport = ASGITransport(app=app)

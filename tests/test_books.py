@@ -10,6 +10,22 @@ from app.db import models
 from app.db.database import SessionLocal
 from sqlalchemy.ext.asyncio import AsyncSession
 from unittest.mock import AsyncMock
+import time
+from sqlalchemy import text
+from sqlalchemy.exc import OperationalError
+
+# Utility to wait for DB
+async def wait_for_db():
+    retries = 5
+    for i in range(retries):
+        try:
+            async with SessionLocal() as session:
+                await session.execute(text("SELECT 1"))
+                return
+        except OperationalError:
+            print(f"DB not ready yet ({i+1}/{retries}) — retrying...")
+            time.sleep(3)
+    raise RuntimeError("Database not ready after retries")
 
 @pytest_asyncio.fixture
 async def test_db():
@@ -18,6 +34,7 @@ async def test_db():
 
 @pytest_asyncio.fixture
 async def test_client():
+    await wait_for_db()
     async with LifespanManager(app):
         transport = ASGITransport(app=app)
         async with AsyncClient(transport=transport, base_url="http://test") as client:

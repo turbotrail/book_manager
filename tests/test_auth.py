@@ -7,18 +7,28 @@ from app.core.security import hash_password
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine, async_sessionmaker
 from sqlalchemy.future import select
 import asyncio
+import time
 
-TEST_DATABASE_URL = "postgresql+asyncpg://postgres:password@localhost/test_db"
+TEST_DATABASE_URL = "postgresql+asyncpg://user:password@localhost:5432/booksdb"
 
 test_engine = create_async_engine(TEST_DATABASE_URL, echo=True)
 TestSessionLocal = async_sessionmaker(test_engine, expire_on_commit=False)
 
 @pytest.fixture(scope="session", autouse=True)
 async def setup_test_database():
-    async with test_engine.begin() as conn:
-        await conn.run_sync(Base.metadata.drop_all)
-        await conn.run_sync(Base.metadata.create_all)
-    # Apply dependency override after DB is ready
+    retries = 5
+    for i in range(retries):
+        try:
+            async with test_engine.begin() as conn:
+                await conn.run_sync(Base.metadata.drop_all)
+                await conn.run_sync(Base.metadata.create_all)
+            break
+        except Exception as e:
+            if i < retries - 1:
+                print(f"DB not ready yet ({i+1}/{retries}) — retrying...")
+                time.sleep(3)
+            else:
+                raise e
     app.dependency_overrides[get_db] = override_get_db
 
 async def override_get_db():

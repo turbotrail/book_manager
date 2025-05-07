@@ -1,6 +1,6 @@
 # 📚 Intelligent Book Management System
 
-[![codecov](https://codecov.io/gh/your-username/book_manager/branch/main/graph/badge.svg)](https://codecov.io/gh/your-username/book_manager)
+[![Run FastAPI Route Tests](https://github.com/turbotrail/book_manager/actions/workflows/unit_test.yaml/badge.svg)](https://github.com/turbotrail/book_manager/actions/workflows/unit_test.yaml)
 
 This is an AI-powered book management system built with FastAPI, PostgreSQL, and LLaMA3 for generating summaries and personalized book recommendations. It supports core features like user authentication, book and review management, background AI summarization, and recommendation using user preferences.
 
