@@ -88,3 +88,89 @@ async def test_get_recommendations_no_matches(client: AsyncClient, create_user, 
     response = await client.get("/recommendations", headers={"Authorization": "Bearer testuser"})
     assert response.status_code == 200
     assert response.json() == {"message": "Sorry, we couldn't find any books matching your preferences."}
+    @pytest.mark.asyncio
+    async def test_save_preferences_overwrite(client: AsyncClient, create_user):
+        response = await client.post(
+            "/preferences",
+            json={
+                "genre": "Mystery",
+                "author": "Agatha Christie",
+                "min_year": 1920,
+                "max_year": 1970,
+            },
+            headers={"Authorization": "Bearer testuser"},
+        )
+        assert response.status_code == 200
+        assert response.json() == {"message": "Preferences saved successfully"}
+
+        # Verify that preferences were updated
+        response = await client.get("/recommendations", headers={"Authorization": "Bearer testuser"})
+        assert response.status_code == 200
+        data = response.json()
+        assert data["books"] == []  # No matches for updated preferences
+
+    @pytest.mark.asyncio
+    async def test_save_preferences_create_new(client: AsyncClient, test_db):
+        # Create a new user
+        new_user = models.User(username="newuser")
+        test_db.add(new_user)
+        await test_db.commit()
+
+        response = await client.post(
+            "/preferences",
+            json={
+                "genre": "Romance",
+                "author": "Jane Austen",
+                "min_year": 1800,
+                "max_year": 1900,
+            },
+            headers={"Authorization": "Bearer newuser"},
+        )
+        assert response.status_code == 200
+        assert response.json() == {"message": "Preferences saved successfully"}
+
+    @pytest.mark.asyncio
+    async def test_get_recommendations_with_partial_preferences(client: AsyncClient, create_user, create_books):
+        # Update user preferences to only include genre
+        response = await client.post(
+            "/preferences",
+            json={
+                "genre": "Fantasy",
+                "author": None,
+                "min_year": None,
+                "max_year": None,
+            },
+            headers={"Authorization": "Bearer testuser"},
+        )
+        assert response.status_code == 200
+
+        # Fetch recommendations
+        response = await client.get("/recommendations", headers={"Authorization": "Bearer testuser"})
+        assert response.status_code == 200
+        data = response.json()
+        assert "recommendation_summary" in data
+        assert len(data["books"]) > 0
+        assert any(book["title"] == "The Hobbit" for book in data["books"])
+
+    @pytest.mark.asyncio
+    async def test_get_recommendations_with_no_books(client: AsyncClient, create_user, test_db):
+        # Clear all books from the database
+        await test_db.execute("DELETE FROM books")
+        await test_db.commit()
+
+        response = await client.get("/recommendations", headers={"Authorization": "Bearer testuser"})
+        assert response.status_code == 200
+        assert response.json() == {"message": "Sorry, we couldn't find any books matching your preferences."}
+
+    @pytest.mark.asyncio
+    async def test_get_recommendations_llm_integration(client: AsyncClient, create_user, create_books, mocker):
+        # Mock the LLM response
+        mock_llm = mocker.patch("app.api.routes.recommendations.ChatOllama.invoke")
+        mock_llm.return_value = "Here are some great books for you to explore!"
+
+        response = await client.get("/recommendations", headers={"Authorization": "Bearer testuser"})
+        assert response.status_code == 200
+        data = response.json()
+        assert "recommendation_summary" in data
+        assert data["recommendation_summary"] == "Here are some great books for you to explore!"
+        assert len(data["books"]) > 0

@@ -20,3 +20,4 @@ langchain-ollama
 transformers
 tokenizers
 pytest-mock
+aiosqlite
