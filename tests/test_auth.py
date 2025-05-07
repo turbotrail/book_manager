@@ -1,7 +1,7 @@
 import pytest
 from httpx import AsyncClient
 from app.main import app
-from app.db.database import get_db, override_get_db
+from app.db.database import get_db, SessionLocal
 from app.db.models import User
 from app.core.security import hash_password
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -69,3 +69,8 @@ async def test_register_existing_user(test_user):
         )
     assert response.status_code == 400
     assert response.json() == {"detail": "Username already taken"}
+async def override_get_db():
+    async with SessionLocal() as session:
+        yield session
+
+app.dependency_overrides[get_db] = override_get_db
