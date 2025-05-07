@@ -135,7 +135,7 @@ Codecov badge in header updates coverage metrics.
 
 ## 📝 Contributions
 
-Contributions are welcome. Please fork the repo, create a feature branch, and open a PR!
+Contributions are welcome. Please fork the repo, create a feature branch, and open a PR! Note: This project was created as part of an Evaluation process and not an Production ready tool
 
 ---
 
